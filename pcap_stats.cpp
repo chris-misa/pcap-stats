@@ -18,12 +18,17 @@
 
 #define KEY_STR_BUF_SIZE 1024
 
-struct flow_state {
+struct flow_state_t {
   uint32_t pkts;
   uint64_t bytes;
+
+  flow_state_t() {
+    pkts = 0;
+    bytes = 0;
+  }
 };
 
-using state_t = std::unordered_map<std::string, struct flow_state>;
+using flowmap_t = std::unordered_map<std::string, struct flow_state_t>;
 
 void
 usage(int argc, char *argv[])
@@ -45,23 +50,48 @@ key_to_string(struct headers *hdrs)
   return std::string(key_str);
 }
 
-void
-dump_header(std::ofstream &outfile)
-{
-  outfile << "time,stat,pkts,bytes" << std::endl;
-}
+struct state_t {
 
-void
-dump_state(std::ofstream &outfile, state_t &state, double time)
-{
-  std::vector<std::pair<std::string, struct flow_state>> temp (state.begin(), state.end());
-  size_t n = temp.size();
+  flowmap_t *current_flows;
+  flowmap_t *previous_flows;
 
-  auto m = temp.begin() + (size_t)((double)n * 0.5);
-  std::nth_element(temp.begin(), m, temp.end(), [](auto l, auto r) {return l.second.pkts < r.second.pkts; });
+  state_t() {
+    current_flows = new flowmap_t;
+    previous_flows = new flowmap_t;
+  }
 
-  outfile << time << "," << "q0.50" << "," << (*m).second.pkts << "," << (*m).second.bytes << std::endl;
-}
+  ~state_t() {
+    delete current_flows;
+    delete previous_flows;
+  }
+
+  void one_packet(const std::string &key, const uint64_t bytes) {
+    (*current_flows)[key].pkts++;
+    (*current_flows)[key].bytes += bytes;
+  }
+
+  void
+  dump_header(std::ofstream &outfile) {
+    outfile << "time,stat,pkts,bytes" << std::endl;
+  }
+
+  void dump(std::ofstream &outfile, const double time) {
+
+    std::vector<std::pair<std::string, struct flow_state_t>> temp ((*current_flows).begin(), (*current_flows).end());
+    size_t n = temp.size();
+
+    auto m = temp.begin() + (size_t)((double)n * 0.5);
+    std::nth_element(temp.begin(), m, temp.end(), [](auto l, auto r) {return l.second.pkts < r.second.pkts; });
+
+    outfile << time << "," << "q0.50" << "," << (*m).second.pkts << "," << (*m).second.bytes << std::endl;
+  }
+
+  void next_epoch() {
+    delete previous_flows;
+    previous_flows = current_flows;
+    current_flows = new flowmap_t;
+  }
+};
 
 int
 main(int argc, char *argv[])
@@ -78,7 +108,7 @@ main(int argc, char *argv[])
   struct headers hdrs = { 0 };
   std::string key_str;
   std::ofstream outfile;
-  state_t flow_table;
+  state_t state;
   pcap_t *handle;
   double cur_time = 0.0;
   double next_epoch = 0.0;
@@ -100,7 +130,7 @@ main(int argc, char *argv[])
     return 1;
   }
   outfile.setf(std::ios::fixed);
-  dump_header(outfile);
+  state.dump_header(outfile);
 
   // Process all packets
   while ((pkt = pcap_next(handle, &pcap_hdr)) != NULL) {
@@ -112,8 +142,8 @@ main(int argc, char *argv[])
     } else if (cur_time >= next_epoch) {
 
       // Dump results from previous epoch
-      dump_state(outfile, flow_table, next_epoch);
-      flow_table.clear();
+      state.dump(outfile, next_epoch);
+      state.next_epoch();
 
       // Advance next_epoch
       while (cur_time >= next_epoch) {
@@ -125,13 +155,12 @@ main(int argc, char *argv[])
     parse_headers((unsigned char *)pkt, (unsigned char *)(pkt + pcap_hdr.caplen), &hdrs);
     key_str = key_to_string(&hdrs);
 
-    flow_table[key_str].pkts++;
-    flow_table[key_str].bytes += hdrs.ipv4->tot_len;
+    state.one_packet(key_str, hdrs.ipv4->tot_len);
   }
   pcap_close(handle);
 
   // Dump final epoch
-  dump_state(outfile, flow_table, next_epoch);
+  state.dump(outfile, next_epoch);
 
   // Cleanup
   outfile.close();
