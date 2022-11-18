@@ -50,6 +50,31 @@ key_to_string(struct headers *hdrs)
   return std::string(key_str);
 }
 
+flow_state_t
+get_quantile(const flowmap_t *flows, double q)
+{
+  std::vector<std::pair<std::string, struct flow_state_t>> temp ((*flows).begin(), (*flows).end());
+  size_t n = temp.size();
+
+  auto m = temp.begin() + (size_t)((double)n * q);
+  std::nth_element(temp.begin(), m, temp.end(), [](auto l, auto r) {return l.second.pkts < r.second.pkts; });
+  return (*m).second;
+}
+
+double
+get_churn(const flowmap_t *prev, const flowmap_t *next)
+{
+  size_t n = 0;
+
+  for (auto& [key, value] : (*prev)) {
+    if (next->find(key) == next->end()) {
+      n++;
+    }
+  }
+
+  return prev->size() != 0 ? (double)n / (double)prev->size() : 0;
+}
+
 struct state_t {
 
   flowmap_t *current_flows;
@@ -72,18 +97,16 @@ struct state_t {
 
   void
   dump_header(std::ofstream &outfile) {
-    outfile << "time,stat,pkts,bytes" << std::endl;
+    outfile << "time,stat,value" << std::endl;
   }
 
   void dump(std::ofstream &outfile, const double time) {
+    flow_state_t q50 = get_quantile(current_flows, 0.5);
+    double churn = get_churn(previous_flows, current_flows);
 
-    std::vector<std::pair<std::string, struct flow_state_t>> temp ((*current_flows).begin(), (*current_flows).end());
-    size_t n = temp.size();
-
-    auto m = temp.begin() + (size_t)((double)n * 0.5);
-    std::nth_element(temp.begin(), m, temp.end(), [](auto l, auto r) {return l.second.pkts < r.second.pkts; });
-
-    outfile << time << "," << "q0.50" << "," << (*m).second.pkts << "," << (*m).second.bytes << std::endl;
+    outfile << time << "," << "q50pkts" << "," << q50.pkts << std::endl;
+    outfile << time << "," << "q50bytes" << "," << q50.bytes << std::endl;
+    outfile << time << "," << "churn" << "," << churn << std::endl;
   }
 
   void next_epoch() {
