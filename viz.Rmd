@@ -14,7 +14,8 @@ library("patchwork")
 Load the data...
 
 ```{r}
-file_name <- "data/test.csv"
+#file_name <- "data/test.csv"
+file_name <- "MAWI20210707.csv"
 d <- read_csv(file_name) %>%
   pivot_wider(names_from = "stat", values_from = "value")
 ```
@@ -69,7 +70,7 @@ p2 <- d %>%
 ```
 
 Can also visualize the distribution over all epochs...
-```{r, fig.width=4, fig.height=3}
+```{r, fig.width=4, fig.height=4}
 all_qs <- c(
   "000",
   "005",
@@ -97,14 +98,14 @@ p1 <- d %>%
   pivot_longer(cols = paste("q", all_qs, "pkts", sep=""), names_to = "key", values_to = "val") %>%
   mutate(key = str_sub(key, 2, 4) %>% as.numeric()) %>%
   ggplot() +
-  geom_boxplot(aes(x = val, y = key, group = key)) +
+  geom_violin(aes(x = val, y = key, group = key)) +
   scale_x_continuous(trans = "log10", labels = label_number_si()) +
   labs(x = "Packets", y = "CDF")
 p2 <- d %>%
   pivot_longer(cols = paste("q", all_qs, "bytes", sep=""), names_to = "key", values_to = "val") %>%
   mutate(key = str_sub(key, 2, 4) %>% as.numeric()) %>%
   ggplot() +
-  geom_boxplot(aes(x = val, y = key, group = key)) +
+  geom_violin(aes(x = val, y = key, group = key)) +
   scale_x_continuous(trans = "log10", labels = label_number_si()) +
   labs(x = "Bytes", y = "CDF")
 p1 / p2
