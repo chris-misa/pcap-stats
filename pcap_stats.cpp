@@ -140,6 +140,7 @@ struct state_t {
 
   uint64_t total_pkts;
   uint64_t total_bytes;
+  uint64_t total_skipped;
 
   state_t() {
     current_flows = new flowmap_t;
@@ -152,6 +153,7 @@ struct state_t {
 
     total_pkts = 0;
     total_bytes = 0;
+    total_skipped = 0;
   }
 
   ~state_t() {
@@ -171,6 +173,11 @@ struct state_t {
 
     total_pkts++;
     total_bytes += bytes;
+  }
+
+  // Register skipping of a packet
+  void skip_one() {
+    total_skipped++;
   }
 
   void
@@ -233,6 +240,7 @@ struct state_t {
 
     total_pkts = 0;
     total_bytes = 0;
+    total_skipped = 0;
   }
 };
 
@@ -296,9 +304,14 @@ main(int argc, char *argv[])
 
     // Process this packet
     parse_headers((unsigned char *)pkt, (unsigned char *)(pkt + pcap_hdr.caplen), &hdrs);
-    key_str = key_to_string(&hdrs);
 
-    state.one_packet(key_str, hdrs.ipv4->tot_len);
+    if (hdrs.flags & HEADERS_FLAGS_IPv4 &&
+        (hdrs.flags & HEADERS_FLAGS_TCP || hdrs.flags & HEADERS_FLAGS_UDP)) {
+      key_str = key_to_string(&hdrs);
+      state.one_packet(key_str, hdrs.ipv4->tot_len);
+    } else {
+      state.skip_one();
+    }
   }
   pcap_close(handle);
 
