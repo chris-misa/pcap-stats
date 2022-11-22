@@ -28,7 +28,28 @@ struct flow_state_t {
   }
 };
 
-using flowmap_t = std::unordered_map<std::string, struct flow_state_t>;
+const std::vector<double> qs = {
+  0.00,
+  0.05,
+  0.25,
+  0.50,
+  0.75,
+  0.95,
+  1.00
+};
+const std::vector<std::string> qs_labels = {
+  "q000",
+  "q005",
+  "q025",
+  "q050",
+  "q075",
+  "q095",
+  "q100"
+};
+const size_t nqs = qs.size();
+
+using flowmap_t = std::unordered_map<std::string, flow_state_t>;
+using flowvector_t = std::vector<std::pair<std::string, flow_state_t>>;
 
 void
 usage(int argc, char *argv[])
@@ -50,17 +71,6 @@ key_to_string(struct headers *hdrs)
   return std::string(key_str);
 }
 
-flow_state_t
-get_quantile(const flowmap_t *flows, double q)
-{
-  std::vector<std::pair<std::string, struct flow_state_t>> temp ((*flows).begin(), (*flows).end());
-  size_t n = temp.size();
-
-  auto m = temp.begin() + (size_t)((double)n * q);
-  std::nth_element(temp.begin(), m, temp.end(), [](auto l, auto r) {return l.second.pkts < r.second.pkts; });
-  return (*m).second;
-}
-
 double
 get_churn(const flowmap_t *prev, const flowmap_t *next)
 {
@@ -80,19 +90,37 @@ struct state_t {
   flowmap_t *current_flows;
   flowmap_t *previous_flows;
 
+  flowmap_t *prev_top1P;
+  flowmap_t *prev_top10P;
+
+  uint64_t total_pkts;
+  uint64_t total_bytes;
+
   state_t() {
     current_flows = new flowmap_t;
     previous_flows = new flowmap_t;
+
+    prev_top1P = new flowmap_t;
+    prev_top10P = new flowmap_t;
+
+    total_pkts = 0;
+    total_bytes = 0;
   }
 
   ~state_t() {
     delete current_flows;
     delete previous_flows;
+
+    delete prev_top1P;
+    delete prev_top10P;
   }
 
   void one_packet(const std::string &key, const uint64_t bytes) {
     (*current_flows)[key].pkts++;
     (*current_flows)[key].bytes += bytes;
+
+    total_pkts++;
+    total_bytes += bytes;
   }
 
   void
@@ -100,19 +128,62 @@ struct state_t {
     outfile << "time,stat,value" << std::endl;
   }
 
+  // Compute stats and dump
   void dump(std::ofstream &outfile, const double time) {
-    flow_state_t q50 = get_quantile(current_flows, 0.5);
-    double churn = get_churn(previous_flows, current_flows);
+    flow_state_t pktsQuants[nqs];
+    flow_state_t bytesQuants[nqs];
 
-    outfile << time << "," << "q50pkts" << "," << q50.pkts << std::endl;
-    outfile << time << "," << "q50bytes" << "," << q50.bytes << std::endl;
-    outfile << time << "," << "churn" << "," << churn << std::endl;
+    flowvector_t temp ((*current_flows).begin(), (*current_flows).end());
+    size_t n = temp.size();
+    size_t idx;
+
+    std::sort(temp.begin(), temp.end(), [](auto l, auto r) { return l.second.bytes < r.second.bytes; });
+    for (size_t i = 0; i < nqs; i++) {
+      idx = (size_t)((double)n * qs[i]);
+      if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
+      bytesQuants[i] = temp[idx].second;
+    }
+
+    std::sort(temp.begin(), temp.end(), [](auto l, auto r) { return l.second.pkts < r.second.pkts; });
+    for (size_t i = 0; i < nqs; i++) {
+      idx = (size_t)((double)n * qs[i]);
+      if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
+      pktsQuants[i] = temp[idx].second;
+    }
+    flowvector_t top1Pv (temp.end() - (size_t)((double)n * 0.01), temp.end());
+    flowmap_t   *top1P = new flowmap_t (top1Pv.begin(), top1Pv.end());
+    flowvector_t top10Pv (temp.end() - (size_t)((double)n * 0.1), temp.end());
+    flowmap_t   *top10P = new flowmap_t (top10Pv.begin(), top10Pv.end());
+
+    double churnGlobal = get_churn(previous_flows, current_flows);
+    double churn1P = get_churn(prev_top1P, top1P);
+    double churn10P = get_churn(prev_top10P, top10P);
+
+    delete prev_top1P;
+    delete prev_top10P;
+
+    prev_top1P = top1P;
+    prev_top10P = top10P;
+
+    outfile << time << "," << "numFlows" << "," << n << std::endl;
+    outfile << time << "," << "totalPkts" << "," << total_pkts << std::endl;
+    outfile << time << "," << "totalBytes" << "," << total_bytes << std::endl;
+    for (size_t i = 0; i < nqs; i++) {
+      outfile << time << "," << qs_labels[i] << "pkts"  << "," << pktsQuants[i].pkts << std::endl;
+      outfile << time << "," << qs_labels[i] << "bytes" << "," << bytesQuants[i].bytes << std::endl;
+    }
+    outfile << time << "," << "churnGlobal" << "," << churnGlobal << std::endl;
+    outfile << time << "," << "churnTop1Percent" << "," << churn1P << std::endl;
+    outfile << time << "," << "churnTop10Percent" << "," << churn10P << std::endl;
   }
 
   void next_epoch() {
     delete previous_flows;
     previous_flows = current_flows;
     current_flows = new flowmap_t;
+
+    total_pkts = 0;
+    total_bytes = 0;
   }
 };
 

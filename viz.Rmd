@@ -1,0 +1,83 @@
+---
+title: "Pcap Stats Visualization"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("tidyverse")
+library("scales")
+library("patchwork")
+```
+
+
+Load the data...
+
+```{r}
+file_name <- "data/test.csv"
+d <- read_csv(file_name) %>%
+  pivot_wider(names_from = "stat", values_from = "value")
+```
+
+Double check sanity of epoch duration...
+```{r}
+range(d$time[-1] - d$time[-nrow(d)])
+```
+
+Look at packet, byte, and flow counts per epoch --- the most basic summary...
+```{r, fig.width=4, fig.height=4}
+p1 <- d %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = totalPkts)) +
+  scale_y_continuous(labels = label_number_si()) +
+  labs(x = "", y = "pkts")
+p2 <- d %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = totalBytes)) +
+  scale_y_continuous(labels = label_number_si()) +
+  labs(x = "", y = "bytes")
+p3 <- d %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = numFlows)) +
+  scale_y_continuous(labels = label_number_si()) +
+  labs(x = "time", y = "flows")
+p1 / p2 / p3
+```
+
+```{r}
+qs <- c(
+  "q000",
+  "q005",
+  "q025",
+  "q050",
+  "q075",
+  "q095",
+  "q100"
+)
+```
+
+Look at quantiles over time...
+```{r, fig.width=4, fig.height=4}
+p1 <- d %>%
+  pivot_longer(cols = paste(qs, "pkts", sep=""), names_to = "key", values_to = "val") %>%
+  select(time, key, val) %>%
+  mutate(key = str_sub(key, 2, 4)) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = val, color = key)) +
+  scale_y_continuous(trans="log10", labels = label_number_si()) +
+  labs(x = "", y = "pkts", color = "quantile")
+
+p2 <- d %>%
+  pivot_longer(cols = paste(qs, "bytes", sep=""), names_to = "key", values_to = "val") %>%
+  select(time, key, val) %>%
+  mutate(key = str_sub(key, 2, 4)) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = val, color = key)) +
+  scale_y_continuous(trans="log10", labels = label_number_si()) +
+  labs(x = "time", y = "bytes", color = "quantile")
+
+(p1 / p2) + plot_layout(guides = "collect") & theme(legend.position = "top")
+```
+
+
+
