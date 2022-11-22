@@ -40,26 +40,15 @@ p3 <- d %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = numFlows)) +
   scale_y_continuous(labels = label_number_si()) +
-  labs(x = "time", y = "flows")
+  labs(x = "time (epochs)", y = "flows")
 p1 / p2 / p3
-```
-
-```{r}
-qs <- c(
-  "q000",
-  "q005",
-  "q025",
-  "q050",
-  "q075",
-  "q095",
-  "q100"
-)
 ```
 
 Look at quantiles over time...
 ```{r, fig.width=4, fig.height=4}
+target_qs <- c("005", "050", "095", "100")
 p1 <- d %>%
-  pivot_longer(cols = paste(qs, "pkts", sep=""), names_to = "key", values_to = "val") %>%
+  pivot_longer(cols = paste("q", target_qs, "pkts", sep=""), names_to = "key", values_to = "val") %>%
   select(time, key, val) %>%
   mutate(key = str_sub(key, 2, 4)) %>%
   ggplot() +
@@ -68,16 +57,119 @@ p1 <- d %>%
   labs(x = "", y = "pkts", color = "quantile")
 
 p2 <- d %>%
-  pivot_longer(cols = paste(qs, "bytes", sep=""), names_to = "key", values_to = "val") %>%
+  pivot_longer(cols = paste("q", target_qs, "bytes", sep=""), names_to = "key", values_to = "val") %>%
   select(time, key, val) %>%
   mutate(key = str_sub(key, 2, 4)) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = val, color = key)) +
   scale_y_continuous(trans="log10", labels = label_number_si()) +
-  labs(x = "time", y = "bytes", color = "quantile")
+  labs(x = "time (epochs)", y = "bytes", color = "quantile")
 
 (p1 / p2) + plot_layout(guides = "collect") & theme(legend.position = "top")
 ```
 
+Can also visualize the distribution over all epochs...
+```{r, fig.width=4, fig.height=3}
+all_qs <- c(
+  "000",
+  "005",
+  "010",
+  "015",
+  "020",
+  "025",
+  "030",
+  "035",
+  "040",
+  "045",
+  "050",
+  "055",
+  "060",
+  "065",
+  "070",
+  "075",
+  "080",
+  "085",
+  "090",
+  "095",
+  "100"
+)
+p1 <- d %>%
+  pivot_longer(cols = paste("q", all_qs, "pkts", sep=""), names_to = "key", values_to = "val") %>%
+  mutate(key = str_sub(key, 2, 4) %>% as.numeric()) %>%
+  ggplot() +
+  geom_boxplot(aes(x = val, y = key, group = key)) +
+  scale_x_continuous(trans = "log10", labels = label_number_si()) +
+  labs(x = "Packets", y = "CDF")
+p2 <- d %>%
+  pivot_longer(cols = paste("q", all_qs, "bytes", sep=""), names_to = "key", values_to = "val") %>%
+  mutate(key = str_sub(key, 2, 4) %>% as.numeric()) %>%
+  ggplot() +
+  geom_boxplot(aes(x = val, y = key, group = key)) +
+  scale_x_continuous(trans = "log10", labels = label_number_si()) +
+  labs(x = "Bytes", y = "CDF")
+p1 / p2
+```
+
+Look at different churns...
+```{r, fig.width=4, fig.height=5}
+# Note that we drop the first row cause the first churn is undefined (no previous observation)
+p0 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = churnTop0.1Percent)) +
+  labs(x = "", y = "0.1%")
+p1 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = churnTop1Percent)) +
+  labs(x = "", y = "1%")
+p2 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = churnTop5Percent)) +
+  labs(x = "", y = "5%")
+p3 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = churnTop10Percent)) +
+  labs(x = "", y = "10%")
+p4 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = churnGlobal)) +
+  labs(x = "time (epochs)", y = "100%")
+p0 / p1 / p2 / p3 / p4
+```
+
+And their corresponding quantiles...
+```{r, fig.width=4, fig.height=5}
+# Note that we drop the first row cause the first churn is undefined (no previous observation)
+p0 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = q0999pkts)) +
+  labs(x = "", y = "0.1%")
+p1 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = q099pkts)) +
+  labs(x = "", y = "1%")
+p2 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = q095pkts)) +
+  labs(x = "", y = "5%")
+p3 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = q090pkts)) +
+  labs(x = "", y = "10%")
+p4 <- d %>%
+  slice_tail(n = -1) %>%
+  ggplot() +
+  geom_line(aes(x = time - time[1], y = q000pkts)) +
+  labs(x = "time (epochs)", y = "100%")
+p0 / p1 / p2 / p3 / p4
+```
 
 

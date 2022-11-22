@@ -31,22 +31,68 @@ struct flow_state_t {
 const std::vector<double> qs = {
   0.00,
   0.05,
+  0.10,
+  0.15,
+  0.20,
   0.25,
+  0.30,
+  0.35,
+  0.40,
+  0.45,
   0.50,
+  0.55,
+  0.60,
+  0.65,
+  0.70,
   0.75,
+  0.80,
+  0.85,
+  0.90,
   0.95,
+  0.99,
+  0.999,
   1.00
 };
 const std::vector<std::string> qs_labels = {
   "q000",
   "q005",
+  "q010",
+  "q015",
+  "q020",
   "q025",
+  "q030",
+  "q035",
+  "q040",
+  "q045",
   "q050",
+  "q055",
+  "q060",
+  "q065",
+  "q070",
   "q075",
+  "q080",
+  "q085",
+  "q090",
   "q095",
+  "q099",
+  "q0999",
   "q100"
 };
 const size_t nqs = qs.size();
+
+const std::vector<double> ns = {
+  0.001,
+  0.01,
+  0.05,
+  0.10
+};
+const std::vector<std::string> ns_labels = {
+  "Top0.1Percent",
+  "Top1Percent",
+  "Top5Percent",
+  "Top10Percent"
+};
+const size_t num_ns = ns.size();
 
 using flowmap_t = std::unordered_map<std::string, flow_state_t>;
 using flowvector_t = std::vector<std::pair<std::string, flow_state_t>>;
@@ -90,8 +136,7 @@ struct state_t {
   flowmap_t *current_flows;
   flowmap_t *previous_flows;
 
-  flowmap_t *prev_top1P;
-  flowmap_t *prev_top10P;
+  flowmap_t **prev_topn;
 
   uint64_t total_pkts;
   uint64_t total_bytes;
@@ -100,8 +145,10 @@ struct state_t {
     current_flows = new flowmap_t;
     previous_flows = new flowmap_t;
 
-    prev_top1P = new flowmap_t;
-    prev_top10P = new flowmap_t;
+    prev_topn = new flowmap_t*[num_ns];
+    for (size_t i = 0; i < num_ns; i++) {
+      prev_topn[i] = new flowmap_t;
+    }
 
     total_pkts = 0;
     total_bytes = 0;
@@ -111,10 +158,13 @@ struct state_t {
     delete current_flows;
     delete previous_flows;
 
-    delete prev_top1P;
-    delete prev_top10P;
+    for (size_t i = 0; i < num_ns; i++) {
+      delete prev_topn[i];
+    }
+    delete prev_topn;
   }
 
+  // Update internal state for a single packet
   void one_packet(const std::string &key, const uint64_t bytes) {
     (*current_flows)[key].pkts++;
     (*current_flows)[key].bytes += bytes;
@@ -150,20 +200,17 @@ struct state_t {
       if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
       pktsQuants[i] = temp[idx].second;
     }
-    flowvector_t top1Pv (temp.end() - (size_t)((double)n * 0.01), temp.end());
-    flowmap_t   *top1P = new flowmap_t (top1Pv.begin(), top1Pv.end());
-    flowvector_t top10Pv (temp.end() - (size_t)((double)n * 0.1), temp.end());
-    flowmap_t   *top10P = new flowmap_t (top10Pv.begin(), top10Pv.end());
+
+    double topn_churn[num_ns];
+    for (size_t i = 0; i < num_ns; i++) {
+      flowvector_t topn_vec (temp.end() - (size_t)((double)n * ns[i]), temp.end());
+      flowmap_t *topn = new flowmap_t (topn_vec.begin(), topn_vec.end());
+      topn_churn[i] = get_churn(prev_topn[i], topn);
+      delete prev_topn[i];
+      prev_topn[i] = topn;
+    }
 
     double churnGlobal = get_churn(previous_flows, current_flows);
-    double churn1P = get_churn(prev_top1P, top1P);
-    double churn10P = get_churn(prev_top10P, top10P);
-
-    delete prev_top1P;
-    delete prev_top10P;
-
-    prev_top1P = top1P;
-    prev_top10P = top10P;
 
     outfile << time << "," << "numFlows" << "," << n << std::endl;
     outfile << time << "," << "totalPkts" << "," << total_pkts << std::endl;
@@ -173,10 +220,12 @@ struct state_t {
       outfile << time << "," << qs_labels[i] << "bytes" << "," << bytesQuants[i].bytes << std::endl;
     }
     outfile << time << "," << "churnGlobal" << "," << churnGlobal << std::endl;
-    outfile << time << "," << "churnTop1Percent" << "," << churn1P << std::endl;
-    outfile << time << "," << "churnTop10Percent" << "," << churn10P << std::endl;
+    for (size_t i = 0; i < num_ns; i++) {
+      outfile << time << "," << "churn" << ns_labels[i] << "," << topn_churn[i] << std::endl;
+    }
   }
 
+  // Reset internal state for start of new epoch
   void next_epoch() {
     delete previous_flows;
     previous_flows = current_flows;
