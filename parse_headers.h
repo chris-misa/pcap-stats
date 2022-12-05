@@ -51,10 +51,10 @@ parse_ipv4(unsigned char *data_start, unsigned char *data_end, struct headers *h
   struct iphdr *ip = (struct iphdr *)data_start;
   int size = sizeof(*ip);
 
-  if (data_start + size <= data_end) {
+  if (ip->version == 4 && data_start + size <= data_end) {
     headers->ipv4 = ip;
     headers->flags |= HEADERS_FLAGS_IPv4;
-    return data_start + size;
+    return data_start + ip->ihl * 4;
   }
   return NULL;
 }
@@ -92,20 +92,26 @@ parse_udp(unsigned char *data_start, unsigned char *data_end, struct headers *he
  * Assumes headers is already allocated
  */
 static __always_inline unsigned char *
-parse_headers(unsigned char *data_start, unsigned char *data_end, struct headers *headers)
+parse_headers(bool hasEther, unsigned char *data_start, unsigned char *data_end, struct headers *headers)
 {
   unsigned char *cur;
 
-  cur = parse_ether(data_start, data_end, headers);
+  if (hasEther) {
+      cur = parse_ether(data_start, data_end, headers);
+      if (ntohs(headers->eth->h_proto) != ETH_P_IP) {
+        cur = NULL;
+      }
+  } else {
+    cur = data_start;
+  }
+
   if (cur != NULL) {
-    if (ntohs(headers->eth->h_proto) == ETH_P_IP) {
-      cur = parse_ipv4(cur, data_end, headers);
-      if (cur != NULL) {
-        if (headers->ipv4->protocol == IPPROTO_TCP) {
-          cur = parse_tcp(cur, data_end, headers);
-        } else if (headers->ipv4->protocol == IPPROTO_UDP) {
-          cur = parse_udp(cur, data_end, headers);
-        }
+    cur = parse_ipv4(cur, data_end, headers);
+    if (cur != NULL) {
+      if (headers->ipv4->protocol == IPPROTO_TCP) {
+        cur = parse_tcp(cur, data_end, headers);
+      } else if (headers->ipv4->protocol == IPPROTO_UDP) {
+        cur = parse_udp(cur, data_end, headers);
       }
     }
   }

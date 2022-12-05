@@ -194,18 +194,20 @@ struct state_t {
     size_t n = temp.size();
     size_t idx;
 
-    std::sort(temp.begin(), temp.end(), [](auto l, auto r) { return l.second.bytes < r.second.bytes; });
-    for (size_t i = 0; i < nqs; i++) {
-      idx = (size_t)((double)n * qs[i]);
-      if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
-      bytesQuants[i] = temp[idx].second;
-    }
+    if (n > 0) {
+      std::sort(temp.begin(), temp.end(), [](auto l, auto r) { return l.second.bytes < r.second.bytes; });
+      for (size_t i = 0; i < nqs; i++) {
+        idx = (size_t)((double)n * qs[i]);
+        if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
+        bytesQuants[i] = temp[idx].second;
+      }
 
-    std::sort(temp.begin(), temp.end(), [](auto l, auto r) { return l.second.pkts < r.second.pkts; });
-    for (size_t i = 0; i < nqs; i++) {
-      idx = (size_t)((double)n * qs[i]);
-      if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
-      pktsQuants[i] = temp[idx].second;
+      std::sort(temp.begin(), temp.end(), [](auto l, auto r) { return l.second.pkts < r.second.pkts; });
+      for (size_t i = 0; i < nqs; i++) {
+        idx = (size_t)((double)n * qs[i]);
+        if (idx >= n) { idx = n - 1; } // so we can still use 1.00 in qs
+        pktsQuants[i] = temp[idx].second;
+      }
     }
 
     double topn_churn[num_ns];
@@ -264,12 +266,21 @@ main(int argc, char *argv[])
   double cur_time = 0.0;
   double next_epoch = 0.0;
   double epoch_dur = 1.0;
+  int dlt = 0;
 
   // Open the pcap file
   handle = pcap_open_offline(infile_name, err);
   if (handle == NULL) {
     fprintf(stderr, "Failed to open \"%s\" for reading: %s\n",
       infile_name, err);
+    return 1;
+  }
+
+  // Check the link type of the opened capture file
+  dlt = pcap_datalink(handle);
+  if (dlt != DLT_EN10MB &&
+      dlt != DLT_RAW) {
+    fprintf(stderr, "Unsupported link-layer type: %d\n", dlt);
     return 1;
   }
 
@@ -303,7 +314,7 @@ main(int argc, char *argv[])
     }
 
     // Process this packet
-    parse_headers((unsigned char *)pkt, (unsigned char *)(pkt + pcap_hdr.caplen), &hdrs);
+    parse_headers(dlt == DLT_EN10MB, (unsigned char *)pkt, (unsigned char *)(pkt + pcap_hdr.caplen), &hdrs);
 
     if (hdrs.flags & HEADERS_FLAGS_IPv4 &&
         (hdrs.flags & HEADERS_FLAGS_TCP || hdrs.flags & HEADERS_FLAGS_UDP)) {
@@ -323,4 +334,3 @@ main(int argc, char *argv[])
 
   return 0;
 }
-
