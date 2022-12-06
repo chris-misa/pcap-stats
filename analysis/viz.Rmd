@@ -15,7 +15,7 @@ Load the data...
 
 ```{r}
 #file_name <- "data/test.csv"
-file_name <- "MAWI20210707.csv"
+file_name <- "CAIDA_equinixNYC_merged_first15min.csv"
 d <- read_csv(file_name) %>%
   pivot_wider(names_from = "stat", values_from = "value")
 ```
@@ -112,33 +112,38 @@ p1 / p2
 ```
 
 Look at different churns...
-```{r, fig.width=4, fig.height=5}
+```{r, fig.width=4, fig.height=6}
 # Note that we drop the first row cause the first churn is undefined (no previous observation)
 p0 <- d %>%
   slice_tail(n = -1) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = churnTop0.1Percent)) +
+  coord_cartesian(ylim=c(0,1)) %>%
   labs(x = "", y = "0.1%")
 p1 <- d %>%
   slice_tail(n = -1) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = churnTop1Percent)) +
+  coord_cartesian(ylim=c(0,1)) %>%
   labs(x = "", y = "1%")
 p2 <- d %>%
   slice_tail(n = -1) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = churnTop5Percent)) +
+  coord_cartesian(ylim=c(0,1)) %>%
   labs(x = "", y = "5%")
 p3 <- d %>%
   slice_tail(n = -1) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = churnTop10Percent)) +
+  coord_cartesian(ylim=c(0,1)) %>%
   labs(x = "", y = "10%")
 p4 <- d %>%
   slice_tail(n = -1) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = churnGlobal)) +
-  labs(x = "time (epochs)", y = "100%")
+  coord_cartesian(ylim=c(0,1)) %>%
+  labs(x = "Time (epochs)", y = "100%")
 p0 / p1 / p2 / p3 / p4
 ```
 
@@ -169,8 +174,41 @@ p4 <- d %>%
   slice_tail(n = -1) %>%
   ggplot() +
   geom_line(aes(x = time - time[1], y = q000pkts)) +
-  labs(x = "time (epochs)", y = "100%")
+  labs(x = "Time (epochs)", y = "100%")
 p0 / p1 / p2 / p3 / p4
 ```
 
 
+Summarise results from above over all epochs...
+```{r, fig.width=4, fig.height=3}
+p1 <- d %>%
+  pivot_longer(cols = c("churnTop0.1Percent", "churnTop1Percent", "churnTop5Percent", "churnTop10Percent", "churnGlobal"),
+               names_to = "name", values_to = "value") %>%
+  mutate(name = factor(name, levels = c("churnTop0.1Percent", "churnTop1Percent", "churnTop5Percent", "churnTop10Percent", "churnGlobal"))) %>%
+  mutate(name = fct_recode(name,
+                           `0.1%` = "churnTop0.1Percent",
+                           `1%` = "churnTop1Percent",
+                           `5%` = "churnTop5Percent",
+                           `10%` = "churnTop10Percent",
+                           `100%` = "churnGlobal")) %>%
+  ggplot() +
+  geom_violin(aes(x = name, y = value)) +
+  labs(x = "", y = "Churn")
+
+p2 <- d %>%
+  pivot_longer(cols = c("q0999pkts", "q099pkts", "q095pkts", "q090pkts", "q000pkts"),
+               names_to = "name", values_to = "value") %>%
+  mutate(name = factor(name, levels = c("q0999pkts", "q099pkts", "q095pkts", "q090pkts", "q000pkts"))) %>%
+  mutate(name = fct_recode(name,
+                           `0.1%` = "q0999pkts",
+                           `1%` = "q099pkts",
+                           `5%` = "q095pkts",
+                           `10%` = "q090pkts",
+                           `100%` = "q000pkts")) %>%
+  ggplot() +
+  geom_boxplot(aes(x = name, y = value)) +
+  scale_y_continuous(trans="log10", labels=label_number_si()) +
+  labs(x = "Top n %", y = "Min # pkts")
+
+p1 / p2
+```
