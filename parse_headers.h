@@ -28,7 +28,7 @@ struct headers {
   union {
     struct tcphdr *tcp;
     struct udphdr *udp;
-  };
+  };    
 };
 
 static __always_inline unsigned char *
@@ -95,6 +95,8 @@ static __always_inline unsigned char *
 parse_headers(bool hasEther, unsigned char *data_start, unsigned char *data_end, struct headers *headers)
 {
   unsigned char *cur;
+
+  memset(headers, 0, sizeof(struct headers));
 
   if (hasEther) {
       cur = parse_ether(data_start, data_end, headers);
