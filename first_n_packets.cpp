@@ -158,7 +158,11 @@ struct state_t {
   }
 
   void dump_header(std::ofstream &outfile) {
-    int num_flows = current_flows->size();
+    int num_flows = 0;
+    for (auto i = (*current_flows).begin(); i != (*current_flows).end(); i++)
+      {
+        if (i->second.size() >= pkts_per_flow) num_flows++;
+      }
     
     outfile << num_flows << " " << num_fields << std::endl;
     outfile << field_types_str << std::endl;
@@ -171,12 +175,15 @@ struct state_t {
         // outfile << i->first << std::endl;
         // i->first is the key
         // i->second is the vector of packets
-        for (auto f = i->second.begin(); f != i->second.end(); f++)
-          {
-            outfile << i->first << ": ";
-            put_fields(outfile, *f);
-          }
-        outfile << std::endl; // extra newline delimits sequences
+        if (i->second.size() >= pkts_per_flow) {
+          for (auto f = i->second.begin(); f != i->second.end(); f++)
+            {
+              // For debugging, look at flow keys
+              // outfile << i->first << ": ";
+              put_fields(outfile, *f);
+            }
+          outfile << std::endl; // extra newline delimits sequences
+        }
       }
   }
 };
