@@ -47,7 +47,7 @@ struct pkt_fields_t {
   uint16_t ip_len;
   uint16_t ip_ttl;
   uint16_t tcp_flags;
-  uint16_t tcp_window;
+  uint16_t tcp_window; // TCP window might be too specific because different impls have different default values (which have nothing to do with the type of traffic...) (unless there's some way to normalize it?)
   uint32_t tcp_seq;
   uint32_t tcp_ack_seq;
   uint16_t application_type;
@@ -71,15 +71,20 @@ std::string field_types_str = std::string("0 0 2 0 0 0 2");
 int num_fields = 7;
 
 void
-put_fields(std::ofstream &outfile, const struct pkt_fields_t &f)
+put_fields(std::ofstream &outfile, const struct pkt_fields_t &f, const struct pkt_fields_t &prev_f)
 {
+  uint32_t seq_diff = prev_f.tcp_seq == 0 ? 0 : f.tcp_seq - prev_f.tcp_seq;
+  uint32_t ack_seq_diff = prev_f.tcp_ack_seq == 0 ? 0 : f.tcp_ack_seq - prev_f.tcp_ack_seq;
+
+  // Should we try to catch and correct for cases where tcp seq numbers wrap around?
+  
   outfile
     << f.ip_len << " "
     << f.ip_ttl << " "
     << f.tcp_flags << " "
     << f.tcp_window << " "
-    << f.tcp_seq << " "
-    << f.tcp_ack_seq << " "
+    << seq_diff << " "
+    << ack_seq_diff << " "
     << f.application_type << std::endl;
 }
 
@@ -117,9 +122,12 @@ extract_pkt_fields(const struct headers &hdrs)
   if (hdrs.flags & HEADERS_FLAGS_TCP) {
     fields.tcp_flags = (tcp_flag_word(hdrs.tcp) >> 8) & 0xFF;
     fields.tcp_window = ntohs(hdrs.tcp->window);
+
     fields.tcp_seq = ntohl(hdrs.tcp->seq);
     fields.tcp_ack_seq = ntohl(hdrs.tcp->ack_seq);
   }
+
+  
   // TODO: set fields.application_type based on common application port numbers
   return fields;
 }
@@ -175,12 +183,14 @@ struct state_t {
         // outfile << i->first << std::endl;
         // i->first is the key
         // i->second is the vector of packets
+	pkt_fields_t prev_f = pkt_fields_t();
         if (i->second.size() >= pkts_per_flow) {
           for (auto f = i->second.begin(); f != i->second.end(); f++)
             {
               // For debugging, look at flow keys
               // outfile << i->first << ": ";
-              put_fields(outfile, *f);
+              put_fields(outfile, *f, prev_f);
+	      prev_f = *f;
             }
           outfile << std::endl; // extra newline delimits sequences
         }
