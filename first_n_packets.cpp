@@ -71,13 +71,21 @@ std::string field_types_str = std::string("0 0 2 0 0 0 2");
 int num_fields = 7;
 
 void
-put_fields(std::ofstream &outfile, const struct pkt_fields_t &f, const struct pkt_fields_t &prev_f)
+put_fields(std::ofstream &outfile, const struct pkt_fields_t &f, struct pkt_fields_t &prev_f)
 {
   uint32_t seq_diff = prev_f.tcp_seq == 0 ? 0 : f.tcp_seq - prev_f.tcp_seq;
-  uint32_t ack_seq_diff = prev_f.tcp_ack_seq == 0 ? 0 : f.tcp_ack_seq - prev_f.tcp_ack_seq;
-
-  // Should we try to catch and correct for cases where tcp seq numbers wrap around?
+  prev_f.tcp_seq = f.tcp_seq;
   
+  uint32_t ack_seq_diff = 0;
+  if (f.tcp_flags & TCP_FLAG_ACK) {
+    ack_seq_diff = prev_f.tcp_ack_seq == 0 ? 0 : f.tcp_ack_seq - prev_f.tcp_ack_seq;
+    prev_f.tcp_ack_seq = f.tcp_ack_seq;
+  }
+
+  // Not pretty, but probably gets rid of super large diffs when things don't line up...
+  if (seq_diff > 2000) seq_diff = 0;
+  if (ack_seq_diff > 2000) ack_seq_diff = 0;
+    
   outfile
     << f.ip_len << " "
     << f.ip_ttl << " "
@@ -190,7 +198,6 @@ struct state_t {
               // For debugging, look at flow keys
               // outfile << i->first << ": ";
               put_fields(outfile, *f, prev_f);
-	      prev_f = *f;
             }
           outfile << std::endl; // extra newline delimits sequences
         }
