@@ -1,5 +1,5 @@
 .PHONY: all
-all: pcap_stats first_n_packets
+all: pcap_stats first_n_packets first_n_packets2
 
 
 pcap_stats: pcap_stats.cpp
@@ -8,7 +8,10 @@ pcap_stats: pcap_stats.cpp
 first_n_packets: first_n_packets.cpp
 	g++ -std=c++17 -Wall -O3 -g $< -o $@ -lpcap
 
+first_n_packets2: first_n_packets2.cpp
+	g++ -std=c++17 -Wall -O3 -g $< -o $@ -lpcap
+
 
 .PHONY: clean
 clean:
-	rm -f pcap_stats first_n_packets
+	rm -f pcap_stats first_n_packets first_n_packets2
